@@ -1,0 +1,24 @@
+# permissions for end users to edit catalogentries.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: catalogentry-editor-role
+rules:
+- apiGroups:
+  - catalog.kcp.dev
+  resources:
+  - catalogentries
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apis.kcp.dev
+  resources:
+  - catalogentries/status
+  verbs:
+  - get
