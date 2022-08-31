@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -47,9 +48,43 @@ type CatalogEntryReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
 func (r *CatalogEntryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	log := ctrllog.FromContext(ctx)
 
-	// TODO(user): your logic here
+	ctx = logicalcluster.WithCluster(ctx, logicalcluster.New(req.ClusterName))
+	// Fetch the catalog entry from the request
+	catalogEntry := &v1alpha1.CatalogEntry{}
+	err := r.Get(ctx, req.NamespacedName, catalogEntry)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Request object not found, could have been deleted after reconcile request.
+			// Owned objects are automatically garbage collected.
+			log.Info("Catalog Entry not found. Ignoring since object must be deleted")
+			return ctrl.Result{}, nil
+		}
+		// Error reading the object - requeue the request.
+		log.Error(err, "Failed to get resource")
+		return ctrl.Result{}, err
+	}
+
+	apiExportNameReferences := catalogEntry.Spec.References
+
+	for _, exportRef := range apiExportNameReferences {
+		// TODO: verify if path contains the entire heirarchy or just the clusterName.
+		// If it contains the heirarchy then extract the clusterName
+		path := exportRef.Workspace.Path
+		name := exportRef.Workspace.ExportName
+		clusterApiExport := apisv1alpha1.APIExport{}
+		err := r.Get(logicalcluster.WithCluster(ctx, logicalcluster.New(path)), types.NamespacedName{Name: name, Namespace: req.Namespace}, &clusterApiExport)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				log.Error(err, "APIExport referenced in catalog entry does not exist")
+				return ctrl.Result{}, err
+			}
+			// Error reading the object - requeue the request.
+			log.Error(err, "Failed to get resource")
+			return ctrl.Result{}, err
+		}
+	}
 
 	return ctrl.Result{}, nil
 }
