@@ -51,12 +51,6 @@ func main() {
 		cmd.Version = v
 	}
 
-	// TODO(dinhxuanvu): Use kubeconfig flag to get access to the kcp cluster.
-	// Later, potentially expand to other options such as KUBECONFIG env or .kcp
-	// directory
-	// cmd.PersistentFlags().String("kubeconfig", ".kubeconfig", "kubeconfig file used to contact the cluster.")
-	// cmd.AddCommand(bind.NewCmd())
-
 	help.FitTerminal(cmd.OutOrStdout())
 
 	os.Exit(cli.Run(cmd))
