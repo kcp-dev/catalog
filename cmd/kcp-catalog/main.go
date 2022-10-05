@@ -18,14 +18,16 @@ package main
 
 import (
 	goflags "flag"
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 
-	"k8s.io/component-base/cli"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/component-base/version"
 	"k8s.io/klog/v2"
 
+	"github.com/kcp-dev/catalog/cmd/kcp-catalog/bind/catalogentry"
 	"github.com/kcp-dev/kcp/pkg/cmd/help"
 )
 
@@ -51,7 +53,15 @@ func main() {
 		cmd.Version = v
 	}
 
-	help.FitTerminal(cmd.OutOrStdout())
+	bindCmd, err := catalogentry.New(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	cmd.AddCommand(bindCmd)
 
-	os.Exit(cli.Run(cmd))
+	if err := cmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 }
