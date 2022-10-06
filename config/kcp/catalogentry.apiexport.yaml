@@ -1,0 +1,7 @@
+apiVersion: apis.kcp.dev/v1alpha1
+kind: APIExport
+metadata:
+  name: catalog.kcp.dev
+spec:
+  latestResourceSchemas:
+    - catalogentries.catalog.kcp.dev

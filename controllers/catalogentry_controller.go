@@ -18,14 +18,30 @@ package controllers
 
 import (
 	"context"
+	"fmt"
+	"reflect"
+	"strings"
 
+	"github.com/kcp-dev/catalog/api/v1alpha1"
+	catalogv1alpha1 "github.com/kcp-dev/catalog/api/v1alpha1"
+	apisv1alpha1 "github.com/kcp-dev/kcp/pkg/apis/apis/v1alpha1"
+	conditionsapi "github.com/kcp-dev/kcp/pkg/apis/third_party/conditions/apis/conditions/v1alpha1"
+	"github.com/kcp-dev/kcp/pkg/apis/third_party/conditions/util/conditions"
+	"github.com/kcp-dev/kcp/pkg/logging"
+	"github.com/kcp-dev/logicalcluster/v2"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+)
 
-	catalogv1alpha1 "github.com/kcp-dev/catalog/api/v1alpha1"
+const (
+	controllerName = "kcp-catalogentry"
 )
 
 // CatalogEntryReconciler reconciles a CatalogEntry object
@@ -38,19 +54,15 @@ type CatalogEntryReconciler struct {
 //+kubebuilder:rbac:groups=catalog.kcp.dev,resources=catalogentries/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=catalog.kcp.dev,resources=catalogentries/finalizers,verbs=update
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the CatalogEntry object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
+// Reconcile validates exports in CatalogEntry spec and add a condition to status
+// to reflect the outcome of the validation.
+// It also aggregates all permissionClaims and api resources from referenced APIExport
+// to CatalogEntry status
 func (r *CatalogEntryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := ctrllog.FromContext(ctx)
-
+	logger := logging.WithReconciler(klog.Background(), controllerName)
+	logger = logger.WithValues("clusterName", req.ClusterName)
 	ctx = logicalcluster.WithCluster(ctx, logicalcluster.New(req.ClusterName))
+
 	// Fetch the catalog entry from the request
 	catalogEntry := &v1alpha1.CatalogEntry{}
 	err := r.Get(ctx, req.NamespacedName, catalogEntry)
@@ -58,30 +70,86 @@ func (r *CatalogEntryReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected.
-			log.Info("Catalog Entry not found. Ignoring since object must be deleted")
+			logger.Info("CatalogEntry not found")
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
-		log.Error(err, "Failed to get resource")
+		logger.Error(err, "failed to get resource")
 		return ctrl.Result{}, err
 	}
 
-	apiExportNameReferences := catalogEntry.Spec.References
-
-	for _, exportRef := range apiExportNameReferences {
+	oldEntry := catalogEntry.DeepCopy()
+	resources := []metav1.GroupResource{}
+	exportPermissionClaims := []apisv1alpha1.PermissionClaim{}
+	invalidExports := []string{}
+	for _, exportRef := range catalogEntry.Spec.Exports {
 		// TODO: verify if path contains the entire heirarchy or just the clusterName.
 		// If it contains the heirarchy then extract the clusterName
 		path := exportRef.Workspace.Path
 		name := exportRef.Workspace.ExportName
-		clusterApiExport := apisv1alpha1.APIExport{}
-		err := r.Get(logicalcluster.WithCluster(ctx, logicalcluster.New(path)), types.NamespacedName{Name: name, Namespace: req.Namespace}, &clusterApiExport)
+		logger = logger.WithValues(
+			"path", path,
+			"exportName", name,
+		)
+		logger.V(2).Info("reconciling CatalogEntry")
+		export := apisv1alpha1.APIExport{}
+		err := r.Get(logicalcluster.WithCluster(ctx, logicalcluster.New(path)), types.NamespacedName{Name: name, Namespace: req.Namespace}, &export)
 		if err != nil {
+			invalidExports = append(invalidExports, fmt.Sprintf("%s/%s", path, name))
 			if errors.IsNotFound(err) {
-				log.Error(err, "APIExport referenced in catalog entry does not exist")
-				return ctrl.Result{}, err
+				logger.Error(err, "APIExport referenced in catalog entry does not exist")
+				continue
 			}
 			// Error reading the object - requeue the request.
-			log.Error(err, "Failed to get resource")
+			logger.Error(err, "failed to get resource")
+			continue
+		}
+
+		// Extract permission and API resource info
+		for _, claim := range export.Spec.PermissionClaims {
+			exportPermissionClaims = append(exportPermissionClaims, claim)
+		}
+		catalogEntry.Status.ExportPermissionClaims = exportPermissionClaims
+
+		for _, schemaName := range export.Spec.LatestResourceSchemas {
+			_, resource, group, ok := split3(schemaName, ".")
+			if !ok {
+				continue
+			}
+			gr := metav1.GroupResource{
+				Group:    group,
+				Resource: resource,
+			}
+			resources = append(resources, gr)
+		}
+		catalogEntry.Status.Resources = resources
+	}
+
+	if len(invalidExports) == 0 {
+		cond := conditionsapi.Condition{
+			Type:               catalogv1alpha1.APIExportValidType,
+			Status:             corev1.ConditionTrue,
+			Severity:           conditionsapi.ConditionSeverityNone,
+			LastTransitionTime: metav1.Now(),
+		}
+		conditions.Set(catalogEntry, &cond)
+	} else {
+		message := fmt.Sprintf("invalid export(s): %s", strings.Join(invalidExports, " ,"))
+		invalidCond := conditionsapi.Condition{
+			Type:               catalogv1alpha1.APIExportValidType,
+			Status:             corev1.ConditionFalse,
+			Severity:           conditionsapi.ConditionSeverityError,
+			LastTransitionTime: metav1.Now(),
+			Message:            message,
+		}
+		conditions.Set(catalogEntry, &invalidCond)
+	}
+
+	// Update the catalog entry if status is changed
+	if !reflect.DeepEqual(catalogEntry.Status, oldEntry.Status) {
+		err = r.Client.Status().Update(context.TODO(), catalogEntry)
+		if err != nil {
+			logger.Error(err, "failed to update CatalogEntry")
 			return ctrl.Result{}, err
 		}
 	}
@@ -94,4 +162,12 @@ func (r *CatalogEntryReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&catalogv1alpha1.CatalogEntry{}).
 		Complete(r)
+}
+
+func split3(s string, sep string) (string, string, string, bool) {
+	comps := strings.SplitN(s, sep, 3)
+	if len(comps) != 3 {
+		return "", "", "", false
+	}
+	return comps[0], comps[1], comps[2], true
 }

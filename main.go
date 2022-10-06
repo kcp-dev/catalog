@@ -38,7 +38,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/kcp"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/kcp-dev/catalog/api/v1alpha1"
 	catalogv1alpha1 "github.com/kcp-dev/catalog/api/v1alpha1"
 	"github.com/kcp-dev/catalog/controllers"
 	//+kubebuilder:scaffold:imports
@@ -51,8 +50,8 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-
 	utilruntime.Must(catalogv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(apisv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -142,7 +141,12 @@ func main() {
 // APIExport's virtual workspace.
 func restConfigForAPIExport(ctx context.Context, cfg *rest.Config, apiExportName string) (*rest.Config, error) {
 	scheme := runtime.NewScheme()
-	if err := v1alpha1.AddToScheme(scheme); err != nil {
+	// Add catalogEntry scheme
+	if err := catalogv1alpha1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("error adding catalog.kcp.dev/v1alpha1 to scheme: %w", err)
+	}
+	// Add APIExport, APIBinding and APIResourceSchema scheme
+	if err := apisv1alpha1.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("error adding apis.kcp.dev/v1alpha1 to scheme: %w", err)
 	}
 
@@ -177,7 +181,6 @@ func restConfigForAPIExport(ctx context.Context, cfg *rest.Config, apiExportName
 	}
 
 	cfg = rest.CopyConfig(cfg)
-	// TODO(ncdc): sharding support
 	cfg.Host = apiExport.Status.VirtualWorkspaces[0].URL
 
 	return cfg, nil

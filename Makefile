@@ -130,9 +130,11 @@ test-e2e-cleanup: ## Clean up processes and directories from an end-to-end test 
 build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager main.go
 
+APIEXPORT_NAME ?= catalog.kcp.dev
+
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./main.go
+	go run ./main.go --api-export-name $(APIEXPORT_NAME)
 
 # If you wish built the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64 ). However, you must enable docker buildKit for it.
