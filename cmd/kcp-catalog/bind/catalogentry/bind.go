@@ -22,9 +22,9 @@ import (
 
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 
+	kcpclienthelper "github.com/kcp-dev/apimachinery/pkg/client"
 	catalogv1alpha1 "github.com/kcp-dev/catalog/api/v1alpha1"
 	apisv1alpha1 "github.com/kcp-dev/kcp/pkg/apis/apis/v1alpha1"
 	pluginhelpers "github.com/kcp-dev/kcp/pkg/cliplugins/helpers"
@@ -37,9 +37,8 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	ctrlcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
 
-	kcpclient "github.com/kcp-dev/kcp/pkg/client/clientset/versioned"
 	"github.com/kcp-dev/kcp/pkg/cliplugins/base"
 	"k8s.io/client-go/rest"
 )
@@ -47,12 +46,7 @@ import (
 // BindOptions contains the options for creating APIBindings for CE
 type BindOptions struct {
 	*base.Options
-	// WorkspacePath refers to the absolute reference to the Catalog Entry workspace
-	// to which the user wants to bind.
-	workspacePath string
-	// Name of the CE.
-	catalogentryName string
-	// APIExportRef is the argument accepted by the command. It contains the
+	// CatalogEntryRef is the argument accepted by the command. It contains the
 	// reference to where APIExport exists. For ex: <absolute_ref_to_workspace>:<apiexport>.
 	CatalogEntryRef string
 }
@@ -87,8 +81,8 @@ func (b *BindOptions) Validate() error {
 		return errors.New("`root:ws:catalogentry_object` reference to bind is required as an argument")
 	}
 
-	if !strings.HasPrefix(b.CatalogEntryRef, "root") {
-		return fmt.Errorf("fully qualified reference to workspace where Catalog Entry exists is required. The format is `root:<ws>:<catalogentry>`")
+	if !strings.HasPrefix(b.CatalogEntryRef, "root") || !logicalcluster.New(b.CatalogEntryRef).IsValid() {
+		return fmt.Errorf("fully qualified reference to workspace where catalog entry exists is required. The format is `root:<ws>:<catalogentry>`")
 	}
 
 	return b.Options.Validate()
@@ -101,28 +95,31 @@ func (b *BindOptions) Run(ctx context.Context) error {
 		return err
 	}
 
-	kcpclient, err := newKCPClusterClient(config)
-	if err != nil {
-		return err
-	}
-
 	_, currentClusterName, err := pluginhelpers.ParseClusterURL(config.Host)
 	if err != nil {
 		return err
 	}
 
-	// get the entry refered in the command.
-	path, entryName := logicalcluster.New(b.CatalogEntryRef).Split()
+	// get the base config, which is needed for creation of clients.
+	baseConfig, err := ctrlcfg.GetConfigWithContext("base")
+	if err != nil {
+		return fmt.Errorf("unable to get base config %v", err)
+	}
 
-	client, err := newCatalogClient(config)
+	// get the entry referenced in the command to which the user wants to bind.
+	path, entryName := logicalcluster.New(b.CatalogEntryRef).Split()
+	client, err := newCatalogClient(baseConfig, path)
 	if err != nil {
 		return err
 	}
 
-	// TODO: figure out if this usage of controller-runtime client can be used.
 	entry := catalogv1alpha1.CatalogEntry{}
-	// TODO: context shouldn't embed path directly, figure out if the host URL will be correct.
-	err = client.Get(logicalcluster.WithCluster(ctx, path), types.NamespacedName{Name: entryName}, &entry)
+	err = client.Get(context.TODO(), types.NamespacedName{Name: entryName}, &entry)
+	if err != nil {
+		return fmt.Errorf("cannot find the catalog entry %q referenced in the command in the workspace %q", entryName, path)
+	}
+
+	kcpclient, err := newKCPClusterClient(baseConfig, currentClusterName)
 	if err != nil {
 		return err
 	}
@@ -149,7 +146,7 @@ func (b *BindOptions) Run(ctx context.Context) error {
 
 	// Create bindings to the target workspace
 	for _, binding := range apibindings {
-		_, err := kcpclient.Cluster(currentClusterName).ApisV1alpha1().APIBindings().Create(ctx, &binding, metav1.CreateOptions{})
+		err := kcpclient.Create(ctx, &binding)
 		if err != nil {
 			// If an APIBinding already exists, intentionally not updating it since we would not like reset AcceptablePermissionClaims.
 			klog.Infof("Failed to create API binding %s: %w", binding.Name, err)
@@ -157,7 +154,8 @@ func (b *BindOptions) Run(ctx context.Context) error {
 		}
 
 		if err := wait.PollImmediate(time.Millisecond*500, time.Second*5, func() (done bool, err error) {
-			createdBinding, err := kcpclient.Cluster(currentClusterName).ApisV1alpha1().APIBindings().Get(ctx, binding.Name, metav1.GetOptions{})
+			createdBinding := apisv1alpha1.APIBinding{}
+			err = kcpclient.Get(ctx, types.NamespacedName{Name: binding.Name}, &createdBinding)
 			if err != nil {
 				return false, err
 			}
@@ -166,42 +164,34 @@ func (b *BindOptions) Run(ctx context.Context) error {
 			}
 			return false, nil
 		}); err != nil {
-			return err
+			return fmt.Errorf("could not bind %s: %w", binding.Name, err)
 		}
+	}
+	if _, err := fmt.Fprintf(b.Out, "%s created and bound to catalog entry.\n", entryName); err != nil {
+		return err
 	}
 	return nil
 }
 
-func newKCPClusterClient(config *rest.Config) (*kcpclient.Cluster, error) {
-	clusterConfig := rest.CopyConfig(config)
-	u, err := url.Parse(config.Host)
-	if err != nil {
-		return nil, err
-	}
-
-	u.Path = ""
-	clusterConfig.Host = u.String()
-	clusterConfig.UserAgent = rest.DefaultKubernetesUserAgent()
-
-	return kcpclient.NewClusterForConfig(clusterConfig)
-
-}
-
-func newCatalogClient(cfg *rest.Config) (client.Client, error) {
+func newKCPClusterClient(cfg *rest.Config, clusterName logicalcluster.Name) (client.Client, error) {
 	scheme := runtime.NewScheme()
 	err := apisv1alpha1.AddToScheme(scheme)
 	if err != nil {
 		return nil, err
 	}
+	return client.New(kcpclienthelper.SetCluster(rest.CopyConfig(cfg), clusterName), client.Options{
+		Scheme: scheme,
+	})
+}
 
-	rm, err := apiutil.NewDynamicRESTMapper(cfg)
+func newCatalogClient(cfg *rest.Config, clusterName logicalcluster.Name) (client.Client, error) {
+	scheme := runtime.NewScheme()
+	err := catalogv1alpha1.AddToScheme(scheme)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create dymanic rest mapper %v", err)
+		return nil, err
 	}
 
-	return client.New(cfg, client.Options{
+	return client.New(kcpclienthelper.SetCluster(rest.CopyConfig(cfg), clusterName), client.Options{
 		Scheme: scheme,
-		Mapper: rm,
 	})
-
 }

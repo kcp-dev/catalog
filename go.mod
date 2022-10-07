@@ -3,8 +3,10 @@ module github.com/kcp-dev/catalog
 go 1.18
 
 require (
+	github.com/kcp-dev/apimachinery v0.0.0-20220912132244-efe716c18e43
 	github.com/kcp-dev/kcp v0.8.2
 	github.com/kcp-dev/kcp/pkg/apis v0.8.2
+	github.com/kcp-dev/logicalcluster/v2 v2.0.0-alpha.3
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.18.1
 	github.com/spf13/cobra v1.4.0
@@ -68,8 +70,6 @@ require (
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/kcp-dev/apimachinery v0.0.0-20220912132244-efe716c18e43 // indirect
-	github.com/kcp-dev/logicalcluster/v2 v2.0.0-alpha.3 // indirect
 	github.com/liggitt/tabwriter v0.0.0-20181228230101-89fcab3d43de // indirect
 	github.com/mailru/easyjson v0.7.6 // indirect
 	github.com/martinlindhe/base36 v1.1.1 // indirect
