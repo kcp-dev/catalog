@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.8.0
+    controller-gen.kubebuilder.io/version: v0.10.0
   creationTimestamp: null
   name: catalogentries.catalog.kcp.dev
 spec:
@@ -57,9 +57,8 @@ spec:
                           type: string
                         path:
                           description: path is an absolute reference to a workspace,
-                            e.g. root:org:ws. The workspace must be some ancestor
-                            or a child of some ancestor. If it is unset, the path
-                            of the APIBinding is used.
+                            e.g. root:org:ws. If it is unset, the path of the APIBinding
+                            is used.
                           pattern: ^root(:[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                           type: string
                       required:
@@ -125,11 +124,12 @@ spec:
                   by the API provider(s) for this catalog entry.
                 items:
                   description: PermissionClaim identifies an object by GR and identity
-                    hash. It's purpose is to determine the added permisions that a
+                    hash. Its purpose is to determine the added permissions that a
                     service provider may request and that a consumer may accept and
-                    alllow the service provider access to.
+                    allow the service provider access to.
                   properties:
                     group:
+                      default: ""
                       description: group is the name of an API group. For core groups
                         this is the empty string '""'.
                       pattern: ^(|[a-z0-9]([-a-z0-9]*[a-z0-9](\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?)$
@@ -174,9 +174,3 @@ spec:
     storage: true
     subresources:
       status: {}
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []

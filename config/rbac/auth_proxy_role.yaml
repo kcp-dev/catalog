@@ -1,27 +1,24 @@
-# permissions for end users to view catalogentries.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/name: clusterrole
-    app.kubernetes.io/instance: catalogentry-viewer-role
-    app.kubernetes.io/component: rbac
+    app.kubernetes.io/instance: proxy-role
+    app.kubernetes.io/component: kube-rbac-proxy
     app.kubernetes.io/created-by: catalog
     app.kubernetes.io/part-of: catalog
     app.kubernetes.io/managed-by: kustomize
-  name: catalogentry-viewer-role
+  name: proxy-role
 rules:
 - apiGroups:
-  - catalog.kcp.dev
+  - authentication.k8s.io
   resources:
-  - catalogentries
+  - tokenreviews
   verbs:
-  - get
-  - list
-  - watch
+  - create
 - apiGroups:
-  - catalog.kcp.dev
+  - authorization.k8s.io
   resources:
-  - catalogentries/status
+  - subjectaccessreviews
   verbs:
-  - get
+  - create

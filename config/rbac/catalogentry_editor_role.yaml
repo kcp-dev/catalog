@@ -2,6 +2,13 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: catalogentry-editor-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: catalog
+    app.kubernetes.io/part-of: catalog
+    app.kubernetes.io/managed-by: kustomize
   name: catalogentry-editor-role
 rules:
 - apiGroups:
@@ -17,7 +24,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - apis.kcp.dev
+  - catalog.kcp.dev
   resources:
   - catalogentries/status
   verbs:

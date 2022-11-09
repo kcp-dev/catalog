@@ -14,9 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package v1alpha1 contains API Schema definitions for the catalog.kcp.dev v1alpha1 API group
-//+kubebuilder:object:generate=true
-//+groupName=catalog.kcp.dev
+// Package v1alpha1 contains API Schema definitions for the catalog v1alpha1 API group
+// +kubebuilder:object:generate=true
+// +groupName=catalog.kcp.dev
 package v1alpha1
 
 import (
