@@ -72,8 +72,9 @@ func main() {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 	ctx := ctrl.SetupSignalHandler()
+
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	restConfig := ctrl.GetConfigOrDie()
 	setupLog = setupLog.WithValues("api-export-name", apiExportName)
@@ -98,7 +99,10 @@ func main() {
 		// if you are doing or is intended to do any operation such as perform cleanups
 		// after the manager stops then its usage might be unsafe.
 		// LeaderElectionReleaseOnCancel: true,
-	})
+	}
+
+	setupLog.Info("Looking up virtual workspace URL")
+	cfg, err := restConfigForAPIExport(ctx, restConfig, apiExportName)
 	if err != nil {
 		setupLog.Error(err, "error looking up virtual workspace URL")
 	}
