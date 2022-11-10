@@ -19,11 +19,12 @@ package controllers
 import (
 	"context"
 
-	catalogv1alpha1 "github.com/kcp-dev/catalog/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	catalogv1alpha1 "github.com/kcp-dev/catalog/api/v1alpha1"
 )
 
 // CatalogEntryReconciler reconciles a CatalogEntry object
@@ -32,7 +33,7 @@ type CatalogEntryReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-//+kubebuilder:rbac:groups=catalog.kcp.dev,resources=catalogentries,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups=catalog.kcp.dev,resources=catalogentries,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=catalog.kcp.dev,resources=catalogentries/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=catalog.kcp.dev,resources=catalogentries/finalizers,verbs=update
 
@@ -44,7 +45,7 @@ type CatalogEntryReconciler struct {
 // the user.
 //
 // For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.2/pkg/reconcile
+// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
 func (r *CatalogEntryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
 

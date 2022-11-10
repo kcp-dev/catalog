@@ -1,0 +1,12 @@
+apiVersion: catalog.kcp.dev/v1alpha1
+kind: CatalogEntry
+metadata:
+  labels:
+    app.kubernetes.io/name: catalogentry
+    app.kubernetes.io/instance: catalogentry-sample
+    app.kubernetes.io/part-of: catalog
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: catalog
+  name: catalogentry-sample
+spec:
+  # TODO(user): Add fields here
