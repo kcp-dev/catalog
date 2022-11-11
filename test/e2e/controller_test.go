@@ -264,141 +264,133 @@ func randomName() string {
 // TestValidCatalogEntry verifies that our catalog controller can validate valid
 // catalogEntry by adding correct conditions, resources and exportPermissionClaims
 func TestValidCatalogEntry(t *testing.T) {
-	t.Parallel()
-	for i := 0; i < 3; i++ {
-		t.Run(fmt.Sprintf("attempt-%d", i), func(t *testing.T) {
-			t.Parallel()
-			workspaceCluster := parentWorkspace(t).Join(randomName())
-			c := createWorkspace(t, workspaceCluster)
+	t.Run("testing valid catalog entry", func(t *testing.T) {
+		workspaceCluster := parentWorkspace(t).Join(randomName())
+		c := createWorkspace(t, workspaceCluster)
 
-			// Create test apiResourceSchema
-			schema := &apisv1alpha1.APIResourceSchema{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "schema-test",
+		// Create test apiResourceSchema
+		schema := &apisv1alpha1.APIResourceSchema{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "schema-test",
+			},
+			Spec: apisv1alpha1.APIResourceSchemaSpec{
+				Group: "catalog.kcp.dev",
+				Names: apiextensionsv1.CustomResourceDefinitionNames{
+					Plural:   "tests",
+					Singular: "test",
+					Kind:     "Test",
 				},
-				Spec: apisv1alpha1.APIResourceSchemaSpec{
-					Group: "catalog.kcp.dev",
-					Names: apiextensionsv1.CustomResourceDefinitionNames{
-						Plural:   "tests",
-						Singular: "test",
-						Kind:     "Test",
+				Scope: apiextensionsv1.ClusterScoped,
+				Versions: []apisv1alpha1.APIResourceVersion{{
+					Name:    "v1",
+					Served:  true,
+					Storage: true,
+				}},
+			},
+		}
+		err := createAPIResourceSchema(t, c, workspaceCluster, schema)
+		if err != nil {
+			t.Fatalf("failed to create APIResourceSchema in cluster %q: %v", workspaceCluster, err)
+		}
+
+		// Create test APIExport
+		export := &apisv1alpha1.APIExport{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "export-test",
+			},
+			Spec: apisv1alpha1.APIExportSpec{
+				LatestResourceSchemas: []string{"tests.catalog.kcp.dev"},
+				PermissionClaims: []apisv1alpha1.PermissionClaim{
+					{
+						GroupResource: apisv1alpha1.GroupResource{Resource: "configmaps"},
 					},
-					Scope: apiextensionsv1.ClusterScoped,
-					Versions: []apisv1alpha1.APIResourceVersion{{
-						Name:    "v1",
-						Served:  true,
-						Storage: true,
-					}},
 				},
-			}
-			err := createAPIResourceSchema(t, c, workspaceCluster, schema)
-			if err != nil {
-				t.Fatalf("failed to create APIResourceSchema in cluster %q: %v", workspaceCluster, err)
-			}
+			},
+		}
+		err = createAPIExport(t, c, workspaceCluster, export)
+		if err != nil {
+			t.Fatalf("failed to create APIExport in cluster %q: %v", workspaceCluster, err)
+		}
 
-			// Create test APIExport
-			export := &apisv1alpha1.APIExport{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "export-test",
-				},
-				Spec: apisv1alpha1.APIExportSpec{
-					LatestResourceSchemas: []string{"tests.catalog.kcp.dev"},
-					PermissionClaims: []apisv1alpha1.PermissionClaim{
-						{
-							GroupResource: apisv1alpha1.GroupResource{Resource: "configmaps"},
+		// Create catalogentry
+		path := "root:" + workspaceCluster.Base()
+		newEntry := &catalogv1alpha1.CatalogEntry{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "entry-test",
+			},
+			Spec: catalogv1alpha1.CatalogEntrySpec{
+				Exports: []apisv1alpha1.ExportReference{
+					{
+						Workspace: &apisv1alpha1.WorkspaceExportReference{
+							Path:       path,
+							ExportName: "export-test",
 						},
 					},
 				},
-			}
-			err = createAPIExport(t, c, workspaceCluster, export)
-			if err != nil {
-				t.Fatalf("failed to create APIExport in cluster %q: %v", workspaceCluster, err)
-			}
+			},
+		}
+		entry, err := createCatalogEntry(t, c, workspaceCluster, newEntry)
 
-			// Create catalogentry
-			path := "root:" + workspaceCluster.Base()
-			newEntry := &catalogv1alpha1.CatalogEntry{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "entry-test",
+		// Check APIExportValid condition status to be True
+		if !conditions.IsTrue(entry, catalogv1alpha1.APIExportValidType) {
+			t.Fatalf("expect APIExportValid condition in entry %qin cluster %q to be True", entry.GetName(), workspaceCluster)
+		}
+		// Check ExportPermissionClaims status
+		gr := metav1.GroupResource{
+			Group:    schema.Spec.Group,
+			Resource: schema.Spec.Names.Plural,
+		}
+		if len(entry.Status.Resources) > 0 {
+			assert.Equal(t, entry.Status.Resources[0], gr, "two resources should be the same")
+		} else {
+			t.Fatalf("expect entry %q in cluster %q to has one resource", entry.GetName(), workspaceCluster)
+		}
+		// Check Resource status
+		if len(entry.Status.ExportPermissionClaims) > 0 {
+			claim := apisv1alpha1.PermissionClaim{
+				GroupResource: apisv1alpha1.GroupResource{
+					Resource: "configmaps",
 				},
-				Spec: catalogv1alpha1.CatalogEntrySpec{
-					Exports: []apisv1alpha1.ExportReference{
-						{
-							Workspace: &apisv1alpha1.WorkspaceExportReference{
-								Path:       path,
-								ExportName: "export-test",
-							},
-						},
-					},
-				},
 			}
-			entry, err := createCatalogEntry(t, c, workspaceCluster, newEntry)
-
-			// Check APIExportValid condition status to be True
-			if !conditions.IsTrue(entry, catalogv1alpha1.APIExportValidType) {
-				t.Fatalf("expect APIExportValid condition in entry %qin cluster %q to be True", entry.GetName(), workspaceCluster)
-			}
-			// Check ExportPermissionClaims status
-			gr := metav1.GroupResource{
-				Group:    schema.Spec.Group,
-				Resource: schema.Spec.Names.Plural,
-			}
-			if len(entry.Status.Resources) > 0 {
-				assert.Equal(t, entry.Status.Resources[0], gr, "two resources should be the same")
-			} else {
-				t.Fatalf("expect entry %q in cluster %q to has one resource", entry.GetName(), workspaceCluster)
-			}
-			// Check Resource status
-			if len(entry.Status.ExportPermissionClaims) > 0 {
-				claim := apisv1alpha1.PermissionClaim{
-					GroupResource: apisv1alpha1.GroupResource{
-						Resource: "configmaps",
-					},
-				}
-				assert.Equal(t, entry.Status.ExportPermissionClaims[0], claim, "two ExportPermissionClaims should be the same")
-			} else {
-				t.Fatalf("expect entry %q in cluster %q to has one ExportPermissionClaim", entry.GetName(), workspaceCluster)
-			}
-		})
-	}
+			assert.Equal(t, entry.Status.ExportPermissionClaims[0], claim, "two ExportPermissionClaims should be the same")
+		} else {
+			t.Fatalf("expect entry %q in cluster %q to has one ExportPermissionClaim", entry.GetName(), workspaceCluster)
+		}
+	})
 }
 
 // TestInvalidCatalogEntry verifies that our catalog controller can validate
 // invalid catalogEntry (bad export reference) but add a False condition in status
 func TestInvalidCatalogEntry(t *testing.T) {
-	t.Parallel()
-	for i := 0; i < 3; i++ {
-		t.Run(fmt.Sprintf("attempt-%d", i), func(t *testing.T) {
-			t.Parallel()
-			workspaceCluster := parentWorkspace(t).Join(randomName())
-			c := createWorkspace(t, workspaceCluster)
+	t.Run("testing invalid catalog entry", func(t *testing.T) {
+		workspaceCluster := parentWorkspace(t).Join(randomName())
+		c := createWorkspace(t, workspaceCluster)
 
-			// Create catalogentry
-			path := "root:" + workspaceCluster.Base()
-			newEntry := &catalogv1alpha1.CatalogEntry{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "entry-test",
-				},
-				Spec: catalogv1alpha1.CatalogEntrySpec{
-					Exports: []apisv1alpha1.ExportReference{
-						{
-							Workspace: &apisv1alpha1.WorkspaceExportReference{
-								Path:       path,
-								ExportName: "export-test",
-							},
+		// Create catalogentry
+		path := "root:" + workspaceCluster.Base()
+		newEntry := &catalogv1alpha1.CatalogEntry{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "entry-test",
+			},
+			Spec: catalogv1alpha1.CatalogEntrySpec{
+				Exports: []apisv1alpha1.ExportReference{
+					{
+						Workspace: &apisv1alpha1.WorkspaceExportReference{
+							Path:       path,
+							ExportName: "export-test",
 						},
 					},
 				},
-			}
-			entry, err := createCatalogEntry(t, c, workspaceCluster, newEntry)
-			if err != nil {
-				t.Fatalf("catalogEntry %q failed to be reconciled in cluster %q: %v", entry.GetName(), workspaceCluster, err)
-			}
+			},
+		}
+		entry, err := createCatalogEntry(t, c, workspaceCluster, newEntry)
+		if err != nil {
+			t.Fatalf("catalogEntry %q failed to be reconciled in cluster %q: %v", entry.GetName(), workspaceCluster, err)
+		}
 
-			// Check APIExportValid condition status to be False due to bad export ref
-			if conditions.IsTrue(entry, catalogv1alpha1.APIExportValidType) {
-				t.Fatalf("expect APIExportValid condition in entry %q in cluster %q to be False", entry.GetName(), workspaceCluster)
-			}
-		})
-	}
+		// Check APIExportValid condition status to be False due to bad export ref
+		if conditions.IsTrue(entry, catalogv1alpha1.APIExportValidType) {
+			t.Fatalf("expect APIExportValid condition in entry %q in cluster %q to be False", entry.GetName(), workspaceCluster)
+		}
+	})
 }
