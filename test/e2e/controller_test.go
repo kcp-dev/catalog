@@ -180,7 +180,7 @@ func createAPIResourceSchema(t *testing.T, c client.Client, workspaceCluster log
 	apiName := schema.GetName()
 	t.Logf("creating APIResourceSchema %q|%q", workspaceCluster, apiName)
 	if err := c.Create(context.TODO(), schema); err != nil {
-		fmt.Errorf("could not create APIResourceSchema %q|%q: %v", workspaceCluster, apiName, err)
+		return fmt.Errorf("could not create APIResourceSchema %q|%q: %v", workspaceCluster, apiName, err)
 	}
 
 	t.Logf("waiting for APIResourceSchema %q|%q to be found", workspaceCluster, apiName)
@@ -203,7 +203,7 @@ func createAPIExport(t *testing.T, c client.Client, workspaceCluster logicalclus
 	apiName := export.GetName()
 	t.Logf("creating APIExport %q|%q", workspaceCluster, apiName)
 	if err := c.Create(context.TODO(), export); err != nil {
-		fmt.Errorf("could not create APIExport %q|%q: %v", workspaceCluster, apiName, err)
+		return fmt.Errorf("could not create APIExport %q|%q: %v", workspaceCluster, apiName, err)
 	}
 
 	t.Logf("waiting for APIExport %q|%q to be found", workspaceCluster, apiName)
@@ -216,7 +216,7 @@ func createAPIExport(t *testing.T, c client.Client, workspaceCluster logicalclus
 		}
 		return true, nil
 	}); err != nil {
-		fmt.Errorf("APIExport %q|%q not found: %v", workspaceCluster, apiName, err)
+		return fmt.Errorf("APIExport %q|%q not found: %v", workspaceCluster, apiName, err)
 	}
 
 	return nil
@@ -226,7 +226,7 @@ func createCatalogEntry(t *testing.T, c client.Client, workspaceCluster logicalc
 	entryName := entry.GetName()
 	t.Logf("creating CatalogEntry %q|%q", workspaceCluster, entryName)
 	if err := c.Create(context.TODO(), entry); err != nil {
-		fmt.Errorf("could not create CatalogEntry %q|%q: %v", workspaceCluster, entryName, err)
+		return nil, fmt.Errorf("could not create CatalogEntry %q|%q: %v", workspaceCluster, entryName, err)
 	}
 
 	t.Logf("waiting for CatalogEntry %q|%q to be found", workspaceCluster, entryName)
@@ -245,7 +245,7 @@ func createCatalogEntry(t *testing.T, c client.Client, workspaceCluster logicalc
 		}
 		return true, nil
 	}); err != nil {
-		fmt.Errorf("CatalogEntry %q|%q not found: %v", workspaceCluster, entryName, err)
+		return nil, fmt.Errorf("CatalogEntry %q|%q not found: %v", workspaceCluster, entryName, err)
 	}
 
 	return &catalogEntry, nil
