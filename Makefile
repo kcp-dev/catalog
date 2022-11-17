@@ -19,7 +19,7 @@ KUBECTL_KCP ?= $(LOCALBIN)/kubectl-kcp
 YQ ?= $(LOCALBIN)/yq
 
 ## Tool Versions
-KUSTOMIZE_VERSION ?= v3.8.7
+KUSTOMIZE_VERSION ?= v4.5.7
 CONTROLLER_TOOLS_VERSION ?= v0.10.0
 KCP_VERSION ?= 0.9.1
 YQ_VERSION ?= v4.27.2
@@ -71,7 +71,7 @@ SHELL = /usr/bin/env bash -o pipefail
 all: build
 
 # kcp specific
-APIEXPORT_PREFIX ?= catalogentry
+APIEXPORT_PREFIX ?= today
 
 ##@ General
 
@@ -225,28 +225,27 @@ ifndef ignore-not-found
 endif
 
 KUBECONFIG ?= $(abspath ~/.kube/config )
+KCPKUBECONFIG ?= $(ARTIFACT_DIR)/kcp.kubeconfig
 
 .PHONY: install
 install: manifests $(KUSTOMIZE) ## Install CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/crd | kubectl apply -f -
+	$(KUSTOMIZE) build config/kcp | kubectl --kubeconfig $(KCPKUBECONFIG) apply -f -
 
 .PHONY: uninstall
 uninstall: manifests $(KUSTOMIZE) ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/crd | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
+	$(KUSTOMIZE) build config/crd | kubectl --kubeconfig $(KCPKUBECONFIG) delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy-crd
 deploy-crd: manifests $(KUSTOMIZE) ## Deploy controller
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${REGISTRY}/${IMG}
-	$(KUSTOMIZE) build config/default-crd | kubectl --kubeconfig $(KUBECONFIG) apply -f - || true
+	$(KUSTOMIZE) build config/default-crd | kubectl --kubeconfig $(KCPKUBECONFIG) apply -f - || true
 
 .PHONY: deploy
 deploy: manifests $(KUSTOMIZE) ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default | kubectl apply -f -
+	$(KUSTOMIZE) build config/default | kubectl --kubeconfig $(KCPKUBECONFIG) apply -f -
 
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/default | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
-
-
-
+	$(KUSTOMIZE) build config/default | kubectl --kubeconfig $(KCPKUBECONFIG) delete --ignore-not-found=$(ignore-not-found) -f -

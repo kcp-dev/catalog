@@ -4,4 +4,4 @@ metadata:
   name: catalog.kcp.dev
 spec:
   latestResourceSchemas:
-    - catalogentries.catalog.kcp.dev
+    - today.catalogentries.catalog.kcp.dev
