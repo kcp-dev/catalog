@@ -4,8 +4,56 @@ IMG ?= controller:latest
 REGISTRY ?= localhost
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.25.0
+
+##@ Build Dependencies
+
+## Location to install dependencies to
+LOCALBIN ?= $(shell pwd)/bin
+
+## Tool Binaries
+KUSTOMIZE ?= $(LOCALBIN)/kustomize
+CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
+ENVTEST ?= $(LOCALBIN)/setup-envtest
+KCP ?= $(LOCALBIN)/kcp
+KUBECTL_KCP ?= $(LOCALBIN)/kubectl-kcp
+YQ ?= $(LOCALBIN)/yq
+
+## Tool Versions
+KUSTOMIZE_VERSION ?= v3.8.7
+CONTROLLER_TOOLS_VERSION ?= v0.10.0
+KCP_VERSION ?= 0.9.1
+YQ_VERSION ?= v4.27.2
+
+KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
+$(KUSTOMIZE): ## Download kustomize locally if necessary.
+	mkdir -p $(LOCALBIN)
+	curl -s $(KUSTOMIZE_INSTALL_SCRIPT) | bash -s -- $(subst v,,$(KUSTOMIZE_VERSION)) $(LOCALBIN)
+	touch $(KUSTOMIZE) # we download an "old" file, so make will re-download to refresh it unless we make it newer than the owning dir
+
+$(CONTROLLER_GEN): ## Download controller-gen locally if necessary.
+	mkdir -p $(LOCALBIN)
+	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
+
+$(YQ): ## Download yq locally if necessary.
+	mkdir -p $(LOCALBIN)
+	GOBIN=$(LOCALBIN) go install github.com/mikefarah/yq/v4@$(YQ_VERSION)
+
 OS ?= $(shell go env GOOS )
 ARCH ?= $(shell go env GOARCH )
+
+$(KCP): ## Download kcp locally if necessary.
+	mkdir -p $(LOCALBIN)
+	curl -L -s -o - https://github.com/kcp-dev/kcp/releases/download/v$(KCP_VERSION)/kcp_$(KCP_VERSION)_$(OS)_$(ARCH).tar.gz | tar --directory $(LOCALBIN)/../ -xvzf - bin/kcp
+	touch $(KCP) # we download an "old" file, so make will re-download to refresh it unless we make it newer than the owning dir
+
+$(KUBECTL_KCP): ## Download kcp kubectl plugins locally if necessary.
+	mkdir -p $(LOCALBIN)
+	curl -L -s -o - https://github.com/kcp-dev/kcp/releases/download/v$(KCP_VERSION)/kubectl-kcp-plugin_$(KCP_VERSION)_$(OS)_$(ARCH).tar.gz | tar --directory $(LOCALBIN)/../ -xvzf - bin
+	touch $(KUBECTL_KCP) # we download an "old" file, so make will re-download to refresh it unless we make it newer than the owning dir
+
+$(ENVTEST): ## Download envtest locally if necessary.
+	mkdir -p $(LOCALBIN)
+	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -23,7 +71,7 @@ SHELL = /usr/bin/env bash -o pipefail
 all: build
 
 # kcp specific
-APIEXPORT_PREFIX ?= catalog
+APIEXPORT_PREFIX ?= catalogentry
 
 ##@ General
 
@@ -45,11 +93,11 @@ help: ## Display this help.
 ##@ Development
 
 .PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+manifests: $(CONTROLLER_GEN) ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: $(CONTROLLER_GEN) ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 .PHONY: apiresourceschemas
@@ -65,17 +113,22 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test
-test: manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./controllers/... -coverprofile cover.out
+test: manifests generate fmt vet $(ENVTEST) ## Run tests.
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./controllers/... -coverprofile cover.out
 
 ARTIFACT_DIR ?= .test
 
 .PHONY: test-e2e
-test-e2e: $(ARTIFACT_DIR)/kind.kubeconfig kcp-synctarget run-test-e2e## Set up prerequisites and run end-to-end tests on a cluster.
+test-e2e: $(ARTIFACT_DIR)/kind.kubeconfig kcp-synctarget ready-deployment run-test-e2e## Set up prerequisites and run end-to-end tests on a cluster.
 
 .PHONY: run-test-e2e
 run-test-e2e: ## Run end-to-end tests on a cluster.
 	go test ./test/e2e/... --kubeconfig $(abspath $(ARTIFACT_DIR)/kcp.kubeconfig) --workspace $(shell $(KCP_KUBECTL) kcp workspace . --short)
+
+.PHONY: ready-deployment
+ready-deployment: KUBECONFIG = $(ARTIFACT_DIR)/kcp.kubeconfig
+ready-deployment: kind-image install deploy ## Deploy the controller-manager and wait for it to be ready.
+	$(KCP_KUBECTL) --namespace "catalog-system" rollout status deployment/catalog-controller-manager
 
 .PHONY: kind-image
 kind-image: docker-build ## Load the controller-manager image into the kind cluster.
@@ -130,6 +183,7 @@ test-e2e-cleanup: ## Clean up processes and directories from an end-to-end test 
 build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager main.go
 
+NAME_PREFIX ?= catalog-
 APIEXPORT_NAME ?= catalog.kcp.dev
 
 .PHONY: run
@@ -141,11 +195,11 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
-	docker build -t ${IMG} .
+	docker build -t ${REGISTRY}/${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
-	docker push ${IMG}
+	docker push ${REGISTRY}/${IMG}
 
 # PLATFORMS defines the target platforms for  the manager image be build to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
@@ -173,11 +227,11 @@ endif
 KUBECONFIG ?= $(abspath ~/.kube/config )
 
 .PHONY: install
-install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
+install: manifests $(KUSTOMIZE) ## Install CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/crd | kubectl apply -f -
 
 .PHONY: uninstall
-uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+uninstall: manifests $(KUSTOMIZE) ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/crd | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy-crd
@@ -186,7 +240,7 @@ deploy-crd: manifests $(KUSTOMIZE) ## Deploy controller
 	$(KUSTOMIZE) build config/default-crd | kubectl --kubeconfig $(KUBECONFIG) apply -f - || true
 
 .PHONY: deploy
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+deploy: manifests $(KUSTOMIZE) ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default | kubectl apply -f -
 
@@ -194,55 +248,5 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/default | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
 
-##@ Build Dependencies
 
-## Location to install dependencies to
-LOCALBIN ?= $(shell pwd)/bin
-$(LOCALBIN):
-	mkdir -p $(LOCALBIN)
-
-## Tool Binaries
-KUSTOMIZE ?= $(LOCALBIN)/kustomize
-CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
-ENVTEST ?= $(LOCALBIN)/setup-envtest
-KCP ?= $(LOCALBIN)/kcp
-KUBECTL_KCP ?= $(LOCALBIN)/kubectl-kcp
-YQ ?= $(LOCALBIN)/yq
-
-## Tool Versions
-KUSTOMIZE_VERSION ?= v3.8.7
-CONTROLLER_TOOLS_VERSION ?= v0.10.0
-KCP_VERSION ?= 0.9.1
-YQ_VERSION ?= v4.27.2
-
-KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
-.PHONY: kustomize
-kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
-$(KUSTOMIZE): $(LOCALBIN)
-	test -s $(LOCALBIN)/kustomize || { curl -Ss $(KUSTOMIZE_INSTALL_SCRIPT) | bash -s -- $(subst v,,$(KUSTOMIZE_VERSION)) $(LOCALBIN); }
-
-.PHONY: controller-gen
-controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
-$(CONTROLLER_GEN): $(LOCALBIN)
-	test -s $(LOCALBIN)/controller-gen || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
-
-.PHONY: envtest
-envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
-$(ENVTEST): $(LOCALBIN)
-	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-
-$(YQ): ## Download yq locally if necessary.
-	mkdir -p $(LOCALBIN)
-	GOBIN=$(LOCALBIN) go install github.com/mikefarah/yq/v4@$(YQ_VERSION)
-
-.PHONY: kcp
-$(KCP): ## Download kcp locally if necessary.
-	mkdir -p $(LOCALBIN)
-	curl -L -s -o - https://github.com/kcp-dev/kcp/releases/download/v$(KCP_VERSION)/kcp_$(KCP_VERSION)_$(OS)_$(ARCH).tar.gz | tar --directory $(LOCALBIN)/../ -xvzf - bin/kcp
-	touch $(KCP) # we download an "old" file, so make will re-download to refresh it unless we make it newer than the owning dir
-
-$(KUBECTL_KCP): ## Download kcp kubectl plugins locally if necessary.
-	mkdir -p $(LOCALBIN)
-	curl -L -s -o - https://github.com/kcp-dev/kcp/releases/download/v$(KCP_VERSION)/kubectl-kcp-plugin_$(KCP_VERSION)_$(OS)_$(ARCH).tar.gz | tar --directory $(LOCALBIN)/../ -xvzf - bin
-	touch $(KUBECTL_KCP) # we download an "old" file, so make will re-download to refresh it unless we make it newer than the owning dir
 
