@@ -71,7 +71,8 @@ spec:
         args:
         - --api-export-name=catalog.kcp.dev
         - --leader-elect
-        image: controller:latest
+        image: localhost/controller:latest
+        imagePullPolicy: IfNotPresent
         name: manager
         securityContext:
           allowPrivilegeEscalation: false
