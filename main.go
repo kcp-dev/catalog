@@ -135,11 +135,13 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
 }
+
+// +kubebuilder:rbac:groups="apis.kcp.dev",resources=apiexports,verbs=get;list;watch
 
 // restConfigForAPIExport returns a *rest.Config properly configured to communicate with the endpoint for the
 // APIExport's virtual workspace.

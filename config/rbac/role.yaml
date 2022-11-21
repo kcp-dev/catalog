@@ -6,6 +6,14 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - apis.kcp.dev
+  resources:
+  - apiexports
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - catalog.kcp.dev
   resources:
   - catalogentries

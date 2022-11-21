@@ -271,7 +271,7 @@ func TestValidCatalogEntry(t *testing.T) {
 		// Create test apiResourceSchema
 		schema := &apisv1alpha1.APIResourceSchema{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "schema-test",
+				Name: "today.tests.catalog.kcp.dev",
 			},
 			Spec: apisv1alpha1.APIResourceSchemaSpec{
 				Group: "catalog.kcp.dev",
@@ -279,12 +279,16 @@ func TestValidCatalogEntry(t *testing.T) {
 					Plural:   "tests",
 					Singular: "test",
 					Kind:     "Test",
+					ListKind: "testlist",
 				},
 				Scope: apiextensionsv1.ClusterScoped,
 				Versions: []apisv1alpha1.APIResourceVersion{{
 					Name:    "v1",
 					Served:  true,
 					Storage: true,
+					Schema: runtime.RawExtension{
+						Raw: []byte(`{"description":"foo","type":"object"}`),
+					},
 				}},
 			},
 		}
@@ -330,6 +334,9 @@ func TestValidCatalogEntry(t *testing.T) {
 			},
 		}
 		entry, err := createCatalogEntry(t, c, workspaceCluster, newEntry)
+		if err != nil {
+			t.Fatalf("unable to create CatalogEntry: %v", err)
+		}
 
 		// Check APIExportValid condition status to be True
 		if !conditions.IsTrue(entry, catalogv1alpha1.APIExportValidType) {
