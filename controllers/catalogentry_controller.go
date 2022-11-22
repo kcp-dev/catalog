@@ -50,14 +50,24 @@ type CatalogEntryReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-//+kubebuilder:rbac:groups=catalog.kcp.dev,resources=catalogentries,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=catalog.kcp.dev,resources=catalogentries/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=catalog.kcp.dev,resources=catalogentries/finalizers,verbs=update
-
 // Reconcile validates exports in CatalogEntry spec and add a condition to status
 // to reflect the outcome of the validation.
 // It also aggregates all permissionClaims and api resources from referenced APIExport
 // to CatalogEntry status
+
+//+kubebuilder:rbac:groups=catalog.kcp.dev,resources=catalogentries,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=catalog.kcp.dev,resources=catalogentries/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=catalog.kcp.dev,resources=catalogentries/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=secrets/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups="",resources=secrets/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=configmaps/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups="",resources=configmaps/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=namespaces/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups="",resources=namespaces/finalizers,verbs=update
+
 func (r *CatalogEntryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := logging.WithReconciler(klog.Background(), controllerName)
 	logger = logger.WithValues("clusterName", req.ClusterName)
