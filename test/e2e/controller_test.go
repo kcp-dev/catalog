@@ -317,7 +317,6 @@ func TestValidCatalogEntry(t *testing.T) {
 		}
 
 		// Create catalogentry
-		path := "root:" + workspaceCluster.Base()
 		newEntry := &catalogv1alpha1.CatalogEntry{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "entry-test",
@@ -326,7 +325,7 @@ func TestValidCatalogEntry(t *testing.T) {
 				Exports: []apisv1alpha1.ExportReference{
 					{
 						Workspace: &apisv1alpha1.WorkspaceExportReference{
-							Path:       path,
+							Path:       workspaceCluster.String(),
 							ExportName: "export-test",
 						},
 					},
@@ -374,7 +373,6 @@ func TestInvalidCatalogEntry(t *testing.T) {
 		c := createWorkspace(t, workspaceCluster)
 
 		// Create catalogentry
-		path := "root:" + workspaceCluster.Base()
 		newEntry := &catalogv1alpha1.CatalogEntry{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "entry-test",
@@ -383,7 +381,7 @@ func TestInvalidCatalogEntry(t *testing.T) {
 				Exports: []apisv1alpha1.ExportReference{
 					{
 						Workspace: &apisv1alpha1.WorkspaceExportReference{
-							Path:       path,
+							Path:       workspaceCluster.String(),
 							ExportName: "export-test",
 						},
 					},

@@ -127,8 +127,14 @@ run-test-e2e: ## Run end-to-end tests on a cluster.
 
 .PHONY: ready-deployment
 ready-deployment: KUBECONFIG = $(ARTIFACT_DIR)/kcp.kubeconfig
-ready-deployment: kind-image install deploy ## Deploy the controller-manager and wait for it to be ready.
+ready-deployment: kind-image install deploy apibinding ## Deploy the controller-manager and wait for it to be ready.
 	$(KCP_KUBECTL) --namespace "catalog-system" rollout status deployment/catalog-controller-manager
+
+.PHONY: apibinding
+apibinding:
+	$( eval WORKSPACE = $(shell $(KCP_KUBECTL) kcp workspace . --short))
+	sed 's/WORKSPACE/$(WORKSPACE)/' ./test/e2e/apibinding.yaml | $(KCP_KUBECTL) apply -f -
+	$(KCP_KUBECTL) wait --for=condition=Ready apibinding/catalog.kcp.dev
 
 .PHONY: kind-image
 kind-image: docker-build ## Load the controller-manager image into the kind cluster.
@@ -229,7 +235,6 @@ KCPKUBECONFIG ?= $(ARTIFACT_DIR)/kcp.kubeconfig
 
 .PHONY: install
 install: manifests $(KUSTOMIZE) ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | kubectl apply -f -
 	$(KUSTOMIZE) build config/kcp | kubectl --kubeconfig $(KCPKUBECONFIG) apply -f -
 
 .PHONY: uninstall
