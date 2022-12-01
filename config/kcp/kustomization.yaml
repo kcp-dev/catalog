@@ -1,0 +1,8 @@
+resources:
+  - today.apiresourceschemas.yaml
+  - catalogentry.apiexport.yaml
+  - clusterrole.yaml
+  - clusterrolebinding.yaml
+
+configurations:
+  - kustomizeconfig.yaml

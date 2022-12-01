@@ -1,0 +1,9 @@
+apiVersion: apis.kcp.dev/v1alpha1
+kind: APIBinding
+metadata:
+  name: catalog.kcp.dev
+spec:
+  reference:
+    workspace:
+      path: WORKSPACE
+      exportName: catalog.kcp.dev
