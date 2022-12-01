@@ -116,9 +116,7 @@ func (r *CatalogEntryReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 
 		// Extract permission and API resource info
-		for _, claim := range export.Spec.PermissionClaims {
-			exportPermissionClaims = append(exportPermissionClaims, claim)
-		}
+		exportPermissionClaims = append(exportPermissionClaims, export.Spec.PermissionClaims...)
 		catalogEntry.Status.ExportPermissionClaims = exportPermissionClaims
 
 		for _, schemaName := range export.Spec.LatestResourceSchemas {
@@ -157,7 +155,7 @@ func (r *CatalogEntryReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	// Update the catalog entry if status is changed
 	if !reflect.DeepEqual(catalogEntry.Status, oldEntry.Status) {
-		err = r.Client.Status().Update(context.TODO(), catalogEntry)
+		err = r.Client.Status().Update(ctx, catalogEntry)
 		if err != nil {
 			logger.Error(err, "failed to update CatalogEntry")
 			return ctrl.Result{}, err
