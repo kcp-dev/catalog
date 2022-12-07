@@ -1,0 +1,10 @@
+# This is a sample CE object.
+apiVersion: catalog.kcp.dev/v1alpha1
+kind: CatalogEntry
+metadata:
+  name: catalogentry-sample
+spec:      
+  exports:
+    - workspace:
+        path: root:cert-manager-stable
+        exportName: cert-manager-stable
